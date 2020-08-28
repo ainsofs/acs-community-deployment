@@ -1,0 +1,309 @@
+metadata:
+    type: drupal8
+    infrastructure: ^5.1
+    requirements: null
+    icon:
+        default: 'https://s3.amazonaws.com/wodby-images/stacks/drupal8/default.png'
+        30: 'https://s3.amazonaws.com/wodby-images/stacks/drupal8/30.png'
+services:
+    nginx:
+        enabled: true
+        required: true
+        image: 'wodby/nginx:1.18-5.10.2'
+        environment:
+            NGINX_VHOST_PRESET: drupal8
+            NGINX_SET_REAL_IP_FROM: 172.17.0.0/16
+            NGINX_BACKEND_HOST: php
+        ports:
+            - 'edge::80/tcp'
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+        memory: '4'
+        check_ready:
+            http:
+                path: /.healthz
+                port: 80
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        check_alive:
+            http:
+                path: /.healthz
+                port: 80
+            initial_delay_seconds: 80
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+    php:
+        enabled: true
+        required: true
+        image: 'wodby/drupal-php:7.3-4.17.1'
+        ports:
+            - 9000/tcp
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+        memory: '32'
+        security_context:
+            capabilities:
+                add: [SYS_PTRACE]
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        annotations:
+            cloud.wodby.com/drupal-vanilla-tag: 4.20.4
+    mariadb:
+        enabled: true
+        required: false
+        image: 'wodby/mariadb:10.3-3.8.5'
+        environment:
+            MYSQL_ROOT_PASSWORD: '{{db_root_password}}'
+            MYSQL_DATABASE: '{{db_database}}'
+            MYSQL_USER: '{{db_user}}'
+            MYSQL_PASSWORD: '{{db_password}}'
+        ports:
+            - 3306/tcp
+        volumes:
+            - 'mariadb:/var/lib/mysql'
+        memory: '64'
+        deployment:
+            strategy: recreate
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 20
+            failure_threshold: 3
+            timeout_seconds: 3
+            period_seconds: 30
+    redis:
+        enabled: true
+        required: false
+        image: 'wodby/redis:5-3.4.1'
+        environment:
+            REDIS_PASSWORD: '{{redis_password}}'
+        ports:
+            - 6379/tcp
+        volumes:
+            - 'redis:/data'
+            - 'host-sys:/host-sys'
+        memory: '4'
+        deployment:
+            strategy: recreate
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        annotations:
+            pod.beta.kubernetes.io/init-containers: "[\n  {\n    \"name\": \"sysctl\",\n    \"image\": \"busybox\",\n    \"command\": [ \"sysctl\", \"-w\", \"net.core.somaxconn=65535\" ],\n    \"imagePullPolicy\": \"Always\",\n    \"securityContext\": { \"privileged\": true }\n  },\n  {\n    \"name\": \"disable-thp\",\n    \"image\": \"busybox\",\n    \"command\": [ \"sh\", \"-c\", \"[[ -f /host-sys/kernel/mm/transparent_hugepage/enabled ]] && echo never > /host-sys/kernel/mm/transparent_hugepage/enabled || true\" ],\n    \"imagePullPolicy\": \"Always\",\n    \"volumeMounts\": [\n      { \"name\": \"host-sys\", \"mountPath\": \"/host-sys\" }\n    ]\n  }\n]\n"
+    opensmtpd:
+        enabled: true
+        required: false
+        image: 'wodby/opensmtpd:6-1.6.4'
+        ports:
+            - 25/tcp
+        volumes:
+            - 'smtpd:/var/spool/smtpd'
+        memory: '4'
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+    solr:
+        enabled: false
+        required: false
+        image: 'wodby/solr:8-4.6.1'
+        environment:
+            SOLR_DEFAULT_CONFIG_SET: search_api_solr_8.x-3.9
+        ports:
+            - 'edge::8983/tcp'
+        volumes:
+            - 'solr:/opt/solr/server/solr'
+        memory: '256'
+        deployment:
+            strategy: recreate
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 10
+            failure_threshold: 3
+            timeout_seconds: 3
+            period_seconds: 30
+    varnish:
+        enabled: false
+        required: false
+        image: 'wodby/varnish:4.1-4.4.7'
+        environment:
+            VARNISH_SECRET: '{{varnish_secret}}'
+            VARNISH_PURGE_KEY: '{{varnish_purge_key}}'
+            VARNISH_PURGE_EXTERNAL_REQUEST_HEADER: X-Real-IP
+            VARNISH_CONFIG_PRESET: drupal
+            VARNISHD_PARAM_HTTP_RESP_HDR_LEN: 16k
+            VARNISH_BACKEND_HOST: nginx
+        ports:
+            - 'edge::6081/tcp'
+            - 6082/tcp
+        memory: '8'
+        check_ready:
+            http:
+                path: /.vchealthz
+                port: 6081
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        check_alive:
+            http:
+                path: /.vchealthz
+                port: 6081
+            initial_delay_seconds: 80
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+    node:
+        enabled: false
+        required: false
+        image: 'wodby/drupal-node:1.0-2.0.0'
+        environment:
+            NODE_SERVICE_KEY: '{{node_service_key}}'
+        ports:
+            - 'edge::8080/tcp'
+        memory: '32'
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 1
+            failure_threshold: 30
+            timeout_seconds: 1
+    mailhog:
+        enabled: false
+        required: false
+        image: mailhog/mailhog
+        ports:
+            - '25:1025/tcp'
+            - 'edge::80:8025/tcp'
+        memory: '4'
+    pma:
+        enabled: false
+        required: false
+        image: 'phpmyadmin/phpmyadmin:4.7.0-2'
+        environment:
+            PMA_HOST: '{{db_host}}'
+            PHP_UPLOAD_MAX_FILESIZE: 1G
+            PHP_MAX_INPUT_VARS: 1G
+        ports:
+            - 'edge::80/tcp'
+        memory: '32'
+    athenapdf:
+        enabled: false
+        required: false
+        image: 'arachnysdocker/athenapdf-service:2.10.0'
+        environment:
+            WEAVER_AUTH_KEY: '{{athenapdf_password}}'
+            WEAVER_ATHENA_CMD: 'athenapdf -S'
+            WEAVER_MAX_WORKERS: '10'
+            WEAVER_MAX_CONVERSION_QUEUE: '50'
+            WEAVER_WORKER_TIMEOUT: '90'
+            WEAVER_CONVERSION_FALLBACK: 'false'
+        ports:
+            - 'edge::80:8080/tcp'
+        memory: '16'
+    xhprof:
+        enabled: false
+        required: false
+        image: 'wodby/xhprof:2.3.1'
+        ports:
+            - 'edge::80:8080/tcp'
+        volumes:
+            - 'files:/mnt/files'
+        memory: '16'
+    rsyslog:
+        enabled: false
+        required: false
+        image: wodby/rsyslog
+        ports:
+            - 514/udp
+        memory: '4'
+    crond:
+        enabled: true
+        required: false
+        image: 'wodby/drupal-php:7.3-4.17.1'
+        command:
+            - sudo
+            - '-E'
+            - LD_PRELOAD=/usr/lib/preloadable_libiconv.so
+            - crond
+            - '-f'
+            - '-d'
+            - '8'
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+        memory: '32'
+        security_context:
+            capabilities:
+                add: [SYS_PTRACE]
+        annotations:
+            cloud.wodby.com/drupal-vanilla-tag: 4.20.4
+    sshd:
+        enabled: true
+        required: false
+        image: 'wodby/drupal-php:7.3-4.17.1'
+        command:
+            - sudo
+            - /usr/sbin/sshd
+            - '-De'
+        environment:
+            SSHD_GATEWAY_PORTS: clientspecified
+        ports:
+            - 'auto::22'
+            - '9000:9000'
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+        memory: '8'
+        security_context:
+            capabilities:
+                add: [SYS_PTRACE]
+        annotations:
+            cloud.wodby.com/drupal-vanilla-tag: 4.20.4
+volumes:
+    app:
+        path: app
+    files:
+        path: files
+    mariadb:
+        path: mariadb
+    host-sys:
+        path: /sys
+    redis:
+        path: redis
+    smtpd:
+        path: smtpd
+    solr:
+        path: solr
+variables:
+    drupal_hash_salt: 'auto:password:128'
+    drupal_files_sync_salt: 'auto:password:74'
+    db_root_password: 'auto:password:32'
+    db_password: 'auto:password:16'
+    db_host: mariadb
+    db_database: drupal
+    db_user: drupal
+    db_driver: mysql
+    redis_password: 'auto:password:64'
+    varnish_secret: 'auto:password:32'
+    varnish_purge_key: 'auto:password:64'
+    node_service_key: 'auto:password:32'
+    athenapdf_password: 'auto:password:64'

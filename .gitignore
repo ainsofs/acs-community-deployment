@@ -33,3 +33,18 @@ alf_data/
 helm/alfresco-content-services-community/charts
 helm/alfresco-content-services-community/requirements.lock
 helm/alfresco-content-services-community*.tgz
+
+docker-compose/docker-compose.override.yml
+
+docker-compose/volumes/data
+docker-compose/volumes/logs
+
+# docker-compose/volumes/
+# docker-compose/volumes/data/alf*/*
+# !docker-compose/volumes/data/alf*/.gitkeep
+# docker-compose/volumes/data/solr*/*
+# !docker-compose/volumes/data/solr*/.gitkeep
+# docker-compose/volumes/logs/alf*/*
+# !docker-compose/volumes/logs/alf*/.gitkeep
+# docker-compose/volumes/logs/alf*/*
+# !docker-compose/volumes/logs/alf*/.gitkeep
