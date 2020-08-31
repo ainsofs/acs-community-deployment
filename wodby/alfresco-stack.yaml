@@ -1,0 +1,540 @@
+metadata:
+    type: drupal8
+    infrastructure: ^5.1
+    requirements: null
+    icon:
+        default: 'https://s3.amazonaws.com/wodby-images/stacks/drupal8/default.png'
+        30: 'https://s3.amazonaws.com/wodby-images/stacks/drupal8/30.png'
+services:
+
+    alfresco:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-content-repository-community:6.2.0-ga
+        # mem_limit: 1500m
+        volumes:
+            - 'alfresco:/usr/local/tomcat/alf_data'
+        environment:
+            JAVA_OPTS: '
+                -Ddb.driver=org.postgresql.Driver
+                -Ddb.username={{db_user}}
+                -Ddb.password={{db_password}}
+                -Ddb.url=jdbc:postgresql://postgres:5432/alfresco
+                -Dsolr.host=solr6
+                -Dsolr.port=8983
+                -Dsolr.secureComms=none
+                -Dsolr.base.url=/solr
+                -Dindex.subsystem.name=solr6
+                -Dshare.host=127.0.0.1
+                -Dshare.port=8080
+                -Dalfresco.host=localhost
+                -Dalfresco.port=8080
+                -Daos.baseUrlOverwrite=http://localhost:8080/alfresco/aos
+                -Dmessaging.broker.url=\"failover:(nio://activemq:61616)?timeout=3000&jms.useCompression=true\"
+                -Ddeployment.method=DOCKER_COMPOSE
+
+                -Dlocal.transform.service.enabled=true
+                -DlocalTransform.pdfrenderer.url=http://alfresco-pdf-renderer:8090/
+                -DlocalTransform.imagemagick.url=http://imagemagick:8090/
+                -DlocalTransform.libreoffice.url=http://libreoffice:8090/
+                -DlocalTransform.tika.url=http://tika:8090/
+                -DlocalTransform.misc.url=http://transform-misc:8090/
+
+                -Dlegacy.transform.service.enabled=true
+                -Dalfresco-pdf-renderer.url=http://alfresco-pdf-renderer:8090/
+                -Djodconverter.url=http://libreoffice:8090/
+                -Dimg.url=http://imagemagick:8090/
+                -Dtika.url=http://tika:8090/
+                -Dtransform.misc.url=http://transform-misc:8090/
+
+                -Dcsrf.filter.enabled=false
+                -Xms1500m -Xmx1500m
+                '
+
+    alfresco-pdf-renderer:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-pdf-renderer:2.1.0
+        # mem_limit: 1g
+        environment:
+            JAVA_OPTS: " -Xms256m -Xmx512m"
+        # ports:
+        #     - 8090:8090
+
+    imagemagick:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-imagemagick:2.1.0
+        # mem_limit: 1g
+        environment:
+            JAVA_OPTS: " -Xms256m -Xmx512m"
+        # ports:
+        #     - 8091:8090
+
+    libreoffice:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-libreoffice:2.1.0
+        # mem_limit: 1g
+        environment:
+            JAVA_OPTS: " -Xms256m -Xmx512m"
+        # ports:
+        #     - 8092:8090
+
+    tika:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-tika:2.1.0
+        # mem_limit: 1g
+        environment:
+            JAVA_OPTS: " -Xms256m -Xmx512m"
+        # ports:
+        #     - 8093:8090
+
+    transform-misc:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-transform-misc:2.1.0
+        # mem_limit: 1g
+        environment:
+            JAVA_OPTS: " -Xms256m -Xmx512m"
+        # ports:
+        #     - 8094:8090
+
+    share:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-share:6.2.0
+        # mem_limit: 1g
+        environment:
+            REPO_HOST: "alfresco"
+            REPO_PORT: "8080"
+            JAVA_OPTS: "
+                -Xms500m
+                -Xmx500m
+                -Dalfresco.host=localhost
+                -Dalfresco.port=8080
+                -Dalfresco.context=alfresco
+                -Dalfresco.protocol=http
+                "
+
+    postgres:
+        enabled: true
+        required: true
+        image: postgres:11.4
+        # mem_limit: 512m
+        volumes:
+           - 'postgres:/var/lib/postgresql/data'
+        environment:
+            POSTGRES_PASSWORD: '{{db_password}}'
+            POSTGRES_USER: '{{db_user}}'
+            POSTGRES_DB: '{{db_database}}'
+        command: postgres -c max_connections=300 -c log_min_messages=LOG
+        # ports:
+        #     - 5432:5432
+        deployment:
+            strategy: recreate
+
+    solr6:
+        enabled: true
+        required: true
+        image: 'alfresco/alfresco-search-services:1.4.0'
+        # mem_limit: 2g
+        environment:
+            #Solr needs to know how to register itself with Alfresco
+            SOLR_ALFRESCO_HOST: alfresco
+            SOLR_ALFRESCO_PORT: 8080
+            #Alfresco needs to know how to call solr
+            SOLR_SOLR_HOST: solr6
+            SOLR_SOLR_PORT: 8983
+            #Create the default alfresco and archive cores
+            SOLR_CREATE_ALFRESCO_DEFAULTS: alfresco,archive
+            #HTTP by default
+            ALFRESCO_SECURE_COMMS: none
+            SOLR_JAVA_MEM: '-Xms2g -Xmx2g'
+        # ports:
+        #     - 8083:8983 #Browser port
+        ports:
+            - 'edge::8983/tcp'
+        volumes:
+            - 'solr:/opt/alfresco-search-services/data'
+        memory: '256'
+        deployment:
+            strategy: recreate
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 10
+            failure_threshold: 3
+            timeout_seconds: 3
+            period_seconds: 30
+
+    activemq:
+        enabled: true
+        required: true
+        image: alfresco/alfresco-activemq:5.15.8
+        # mem_limit: 1g
+        # ports:
+        #     - 8161:8161 # Web Console
+        #     - 5672:5672 # AMQP
+        #     - 61616:61616 # OpenWire
+        #     - 61613:61613 # STOMP
+
+    proxy:
+        enabled: true
+        required: true
+        image: alfresco/acs-community-ngnix:1.0.0
+        # mem_limit: 128m
+        # depends_on:
+        #     - alfresco
+        ports:
+            # - 8080:8080
+            - 'edge::80/tcp'
+        # links:
+        #     - alfresco
+        #     - share
+        memory: '4'
+        volumes:
+            - app/volumes/config/nginx-default.conf:/etc/nginx/nginx.conf
+            - app/volumes/config/nginx.conf:/etc/nginx/conf.d/default.conf
+        check_ready:
+            http:
+                path: /.healthz
+                port: 80
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        check_alive:
+            http:
+                path: /.healthz
+                port: 80
+            initial_delay_seconds: 80
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+
+
+
+
+
+
+
+
+
+
+
+
+
+## original
+    nginx:
+        enabled: true
+        required: true
+        image: 'wodby/nginx:1.18-5.10.2'
+        environment:
+            NGINX_VHOST_PRESET: drupal8
+            NGINX_SET_REAL_IP_FROM: 172.17.0.0/16
+            NGINX_BACKEND_HOST: php
+        # ports:
+        #     - 'edge::80/tcp'
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+        memory: '4'
+        check_ready:
+            http:
+                path: /.healthz
+                port: 80
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        check_alive:
+            http:
+                path: /.healthz
+                port: 80
+            initial_delay_seconds: 80
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+    php:
+        enabled: true
+        required: true
+        image: 'wodby/drupal-php:7.3-4.17.1'
+        ports:
+            - 9000/tcp
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+            - 'alfresco:/mnt/alfresco'
+            - 'solr:/mnt/solr'
+        memory: '32'
+        security_context:
+            capabilities:
+                add: [SYS_PTRACE]
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        annotations:
+            cloud.wodby.com/drupal-vanilla-tag: 4.20.4
+    mariadb:
+        enabled: true
+        required: false
+        image: 'wodby/mariadb:10.3-3.8.5'
+        environment:
+            MYSQL_ROOT_PASSWORD: '{{db_root_password}}'
+            MYSQL_DATABASE: '{{db_database}}'
+            MYSQL_USER: '{{db_user}}'
+            MYSQL_PASSWORD: '{{db_password}}'
+        ports:
+            - 3306/tcp
+        volumes:
+            - 'mariadb:/var/lib/mysql'
+        memory: '64'
+        deployment:
+            strategy: recreate
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 20
+            failure_threshold: 3
+            timeout_seconds: 3
+            period_seconds: 30
+    redis:
+        enabled: false
+        required: false
+        image: 'wodby/redis:5-3.4.1'
+        environment:
+            REDIS_PASSWORD: '{{redis_password}}'
+        ports:
+            - 6379/tcp
+        volumes:
+            - 'redis:/data'
+            - 'host-sys:/host-sys'
+        memory: '4'
+        deployment:
+            strategy: recreate
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        annotations:
+            pod.beta.kubernetes.io/init-containers: "[\n  {\n    \"name\": \"sysctl\",\n    \"image\": \"busybox\",\n    \"command\": [ \"sysctl\", \"-w\", \"net.core.somaxconn=65535\" ],\n    \"imagePullPolicy\": \"Always\",\n    \"securityContext\": { \"privileged\": true }\n  },\n  {\n    \"name\": \"disable-thp\",\n    \"image\": \"busybox\",\n    \"command\": [ \"sh\", \"-c\", \"[[ -f /host-sys/kernel/mm/transparent_hugepage/enabled ]] && echo never > /host-sys/kernel/mm/transparent_hugepage/enabled || true\" ],\n    \"imagePullPolicy\": \"Always\",\n    \"volumeMounts\": [\n      { \"name\": \"host-sys\", \"mountPath\": \"/host-sys\" }\n    ]\n  }\n]\n"
+    opensmtpd:
+        enabled: true
+        required: false
+        image: 'wodby/opensmtpd:6-1.6.4'
+        ports:
+            - 25/tcp
+        volumes:
+            - 'smtpd:/var/spool/smtpd'
+        memory: '4'
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+    # solr:
+    #     enabled: false
+    #     required: false
+    #     image: 'wodby/solr:8-4.6.1'
+    #     environment:
+    #         SOLR_DEFAULT_CONFIG_SET: search_api_solr_8.x-3.9
+    #     ports:
+    #         - 'edge::8983/tcp'
+    #     volumes:
+    #         - 'solr:/opt/solr/server/solr'
+    #     memory: '256'
+    #     deployment:
+    #         strategy: recreate
+    #     check_ready:
+    #         exec:
+    #             command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+    #         initial_delay_seconds: 10
+    #         failure_threshold: 3
+    #         timeout_seconds: 3
+    #         period_seconds: 30
+    varnish:
+        enabled: false
+        required: false
+        image: 'wodby/varnish:4.1-4.4.7'
+        environment:
+            VARNISH_SECRET: '{{varnish_secret}}'
+            VARNISH_PURGE_KEY: '{{varnish_purge_key}}'
+            VARNISH_PURGE_EXTERNAL_REQUEST_HEADER: X-Real-IP
+            VARNISH_CONFIG_PRESET: drupal
+            VARNISHD_PARAM_HTTP_RESP_HDR_LEN: 16k
+            VARNISH_BACKEND_HOST: nginx
+        ports:
+            - 'edge::6081/tcp'
+            - 6082/tcp
+        memory: '8'
+        check_ready:
+            http:
+                path: /.vchealthz
+                port: 6081
+            initial_delay_seconds: 5
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+        check_alive:
+            http:
+                path: /.vchealthz
+                port: 6081
+            initial_delay_seconds: 80
+            failure_threshold: 2
+            timeout_seconds: 3
+            period_seconds: 30
+    node:
+        enabled: false
+        required: false
+        image: 'wodby/drupal-node:1.0-2.0.0'
+        environment:
+            NODE_SERVICE_KEY: '{{node_service_key}}'
+        ports:
+            - 'edge::8080/tcp'
+        memory: '32'
+        check_ready:
+            exec:
+                command: [make, check-ready, '-f', /usr/local/bin/actions.mk]
+            initial_delay_seconds: 1
+            failure_threshold: 30
+            timeout_seconds: 1
+    mailhog:
+        enabled: false
+        required: false
+        image: mailhog/mailhog
+        ports:
+            - '25:1025/tcp'
+            - 'edge::80:8025/tcp'
+        memory: '4'
+    pma:
+        enabled: false
+        required: false
+        image: 'phpmyadmin/phpmyadmin:4.7.0-2'
+        environment:
+            PMA_HOST: '{{db_host}}'
+            PHP_UPLOAD_MAX_FILESIZE: 1G
+            PHP_MAX_INPUT_VARS: 1G
+        ports:
+            - 'edge::80/tcp'
+        memory: '32'
+    athenapdf:
+        enabled: false
+        required: false
+        image: 'arachnysdocker/athenapdf-service:2.10.0'
+        environment:
+            WEAVER_AUTH_KEY: '{{athenapdf_password}}'
+            WEAVER_ATHENA_CMD: 'athenapdf -S'
+            WEAVER_MAX_WORKERS: '10'
+            WEAVER_MAX_CONVERSION_QUEUE: '50'
+            WEAVER_WORKER_TIMEOUT: '90'
+            WEAVER_CONVERSION_FALLBACK: 'false'
+        ports:
+            - 'edge::80:8080/tcp'
+        memory: '16'
+    xhprof:
+        enabled: false
+        required: false
+        image: 'wodby/xhprof:2.3.1'
+        ports:
+            - 'edge::80:8080/tcp'
+        volumes:
+            - 'files:/mnt/files'
+        memory: '16'
+    rsyslog:
+        enabled: false
+        required: false
+        image: wodby/rsyslog
+        ports:
+            - 514/udp
+        memory: '4'
+    crond:
+        enabled: true
+        required: false
+        image: 'wodby/drupal-php:7.3-4.17.1'
+        command:
+            - sudo
+            - '-E'
+            - LD_PRELOAD=/usr/lib/preloadable_libiconv.so
+            - crond
+            - '-f'
+            - '-d'
+            - '8'
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+            - 'alfresco:/mnt/alfresco'
+            - 'solr:/mnt/solr'
+        memory: '32'
+        security_context:
+            capabilities:
+                add: [SYS_PTRACE]
+        annotations:
+            cloud.wodby.com/drupal-vanilla-tag: 4.20.4
+    sshd:
+        enabled: true
+        required: false
+        image: 'wodby/drupal-php:7.3-4.17.1'
+        command:
+            - sudo
+            - /usr/sbin/sshd
+            - '-De'
+        environment:
+            SSHD_GATEWAY_PORTS: clientspecified
+        ports:
+            - 'auto::22'
+            - '9000:9000'
+        volumes:
+            - 'app:/var/www/html'
+            - 'files:/mnt/files'
+            - 'alfresco:/mnt/alfresco'
+            - 'solr:/mnt/solr'
+        memory: '8'
+        security_context:
+            capabilities:
+                add: [SYS_PTRACE]
+        annotations:
+            cloud.wodby.com/drupal-vanilla-tag: 4.20.4
+volumes:
+    app:
+        path: app
+    files:
+        path: files
+    mariadb:
+        path: mariadb
+    host-sys:
+        path: /sys
+    redis:
+        path: redis
+    smtpd:
+        path: smtpd
+    solr:
+        path: solr
+    alfresco:
+        path: alfresco
+    postgres:
+        path: postgres
+variables:
+    drupal_hash_salt: 'auto:password:128'
+    drupal_files_sync_salt: 'auto:password:74'
+    db_root_password: 'auto:password:32'
+    db_password: 'auto:password:16'
+    db_host: mariadb
+    db_database: drupal
+    db_user: drupal
+    db_driver: mysql
+    redis_password: 'auto:password:64'
+    varnish_secret: 'auto:password:32'
+    varnish_purge_key: 'auto:password:64'
+    node_service_key: 'auto:password:32'
+    athenapdf_password: 'auto:password:64'
